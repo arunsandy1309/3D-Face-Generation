@@ -172,5 +172,36 @@ The `gen_videos.py` script is designed to produce a 3D face video by taking the 
     ```
    - The latent vectors are later interpolated to create smooth transitions, which are used to generate the frames of the video.
 
+- #### 2.3 Interpolation and Frame Generation (gen_interp_video())
+   The core of this script is the gen_interp_video() function. This function takes the loaded latent vectors and generates a series of images, which are then compiled into a video.
+   ```python
+   gen_interp_video(G=G, latent=latent, mp4=output, bitrate='10M', grid_dims=grid, num_keyframes=num_keyframes)
+   ```
+   Let’s break down the key components and processes within gen_interp_video():
+   - ##### 2.3.1 Interpolation of Latent Vectors
+        Latent interpolation is an important technique for creating smooth transitions between generated frames. The latent vectors (latent) are interpolated over several keyframes to ensure
+     the generated video doesn’t look abrupt. In latent space, each frame’s vectors are computed by interpolating between two adjacent keyframes.
+
+      ```python
+      Copy code
+      def slerp(val, low, high):
+          """Spherical interpolation between two latent vectors."""
+          omega = np.arccos(np.dot(low / np.linalg.norm(low), high / np.linalg.norm(high)))
+          so = np.sin(omega)
+          if so == 0:
+              return (1.0 - val) * low + val * high
+          return np.sin((1.0 - val) * omega) / so * low + np.sin(val * omega) / so * high
+      ```
+      - Spherical Interpolation is used instead of simple linear interpolation because the latent space is high-dimensional, and slerp provides more natural-looking transitions.
+    
+   - #### 2.3.2 Camera Movement and Pose
+     Just like in infer.py, the camera setup plays a crucial role in generating 3D images. Here, LookAtPoseSampler is used to adjust the camera’s position, ensuring it captures the face from
+     slightly different angles in each frame, contributing to the 3D effect.
+      ```python
+      Copy code
+      camera_lookat_point = torch.tensor(G.rendering_kwargs['avg_camera_pivot'], device=device)
+      cam2world_pose = LookAtPoseSampler.sample(3.14/2, 3.14/2, camera_lookat_point, radius=G.rendering_kwargs['avg_camera_radius'], device=device)
+      ```
+       - This ensures that the video appears dynamic, as if the camera is orbiting around the generated 3D face.   
 ---
 
