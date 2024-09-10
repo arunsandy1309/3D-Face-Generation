@@ -183,7 +183,6 @@ The `gen_videos.py` script is designed to produce a 3D face video by taking the 
      the generated video doesn’t look abrupt. In latent space, each frame’s vectors are computed by interpolating between two adjacent keyframes.
 
       ```python
-      Copy code
       def slerp(val, low, high):
           """Spherical interpolation between two latent vectors."""
           omega = np.arccos(np.dot(low / np.linalg.norm(low), high / np.linalg.norm(high)))
@@ -198,10 +197,90 @@ The `gen_videos.py` script is designed to produce a 3D face video by taking the 
      Just like in infer.py, the camera setup plays a crucial role in generating 3D images. Here, LookAtPoseSampler is used to adjust the camera’s position, ensuring it captures the face from
      slightly different angles in each frame, contributing to the 3D effect.
       ```python
-      Copy code
       camera_lookat_point = torch.tensor(G.rendering_kwargs['avg_camera_pivot'], device=device)
       cam2world_pose = LookAtPoseSampler.sample(3.14/2, 3.14/2, camera_lookat_point, radius=G.rendering_kwargs['avg_camera_radius'], device=device)
       ```
-       - This ensures that the video appears dynamic, as if the camera is orbiting around the generated 3D face.   
+       - This ensures that the video appears dynamic, as if the camera is orbiting around the generated 3D face.
+    
+   - #### 2.3.3 Generating Images
+     Once the interpolation and camera setup are done, the model generates images by synthesizing latent vectors into high-resolution 3D face images. This process is handled by the
+     TriPlaneGenerator, which is the 3D face generator model.
+      ```python
+      x = G.synthesis(ws=w, c=c, noise_mode='const')['image']
+      ```
+      - Here, w represents the interpolated latent vector, and c contains the camera parameters. The synthesis() function produces the final image, which will be one of the frames in the
+        video.
+
+   - #### 2.4 Image-to-Video Conversion
+      The generated images are saved temporarily, and then they are combined into a video using the imageio library.
+
+      ```python
+      video_out = imageio.get_writer(mp4, mode='I', fps=30, codec='libx264')
+      ```
+       - This step takes the generated images and converts them into a video file (output.mp4). The frames are saved in sequential order, and then the frames-per-second (fps) rate is set to
+         30.
+
+   - #### 2.5 Saving the Video
+      After all the frames are generated, the script finalizes the video by saving it to disk.
+
+      ```python
+      torchvision.utils.save_image(....)
+      ```
+       - The video is saved as output.mp4, and you can now see a moving, dynamic 3D face video generated from the original latent vectors.
+
+## Detailed Explanation of Key Functions
+- ### `gen_interp_video()`
+  This function is the heart of the video generation process. It handles everything from loading the model to creating interpolated frames, combining them into a video.
+   ```python
+   def gen_interp_video(G, latent, mp4, bitrate='10M', grid_dims=(1,1), num_keyframes=16):
+       ...
+       # Step through the keyframes to generate interpolated latent vectors
+       latent_interp = slerp(val, latent_low, latent_high)
+       ...
+       # Generate images using the interpolated latent vector
+       img = G.synthesis(ws=w, c=c, noise_mode='const')['image']
+       # Save the video using imageio
+       video_out.append_data(img)
+   ```
+   - slerp() is used to interpolate between latent vectors to ensure smooth transitions between keyframes.
+   - G.synthesis() generates the images from the interpolated latent vectors.
+   - imageio combines the images into a video.
+ 
+- ### `TriPlaneGenerator`
+   This class represents the main 3D face generation model. It is responsible for taking a latent vector and synthesizing it into a high-resolution 3D face.
+   ```python
+   class TriPlaneGenerator(torch.nn.Module):
+       def synthesis(self, ws, c, noise_mode):
+           ...
+           return output
+   ```
+   - `ws`: The latent vector, which represents the features of the face.
+   - `c`: Camera parameters, which control the camera’s position relative to the face.
+   - `noise_mode`: This controls the random noise used during image generation to add stochastic details to the face.
+
+- ### `LookAtPoseSampler`
+   This class handles the positioning of the virtual camera that captures the 3D face. It computes camera angles, distances, and focal lengths to ensure the face is rendered correctly.
+   ```python
+   class LookAtPoseSampler:
+       def sample(yaw, pitch, look_at, radius, device):
+           ...
+           return pose_matrix
+   ```
+   - Yaw and Pitch: Control the rotation of the camera around the face.
+   - Look-at Point: The specific point the camera should focus on (e.g., the nose or center of the face).
+   - Radius: The distance of the camera from the face.
+
+- ### `GaussianDiffusion1D`
+   This class represents the diffusion process, which is responsible for refining the latent vectors during training and inference.
+
+   ```python
+   class GaussianDiffusion1D:
+       def sample(...):
+           ...
+           return w
+   ```
+   - Sample: Generates a latent vector (w) by denoising the initial random noise through a series of iterations (timesteps). These latent vectors are used by the generator to create the
+     final images. 
+     
 ---
 
